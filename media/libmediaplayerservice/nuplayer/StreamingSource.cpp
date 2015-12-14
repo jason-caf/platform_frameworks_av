@@ -31,6 +31,7 @@
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/MediaSource.h>
 #include <media/stagefright/MetaData.h>
+#include <inttypes.h>
 
 namespace android {
 
