@@ -47,6 +47,7 @@
 #include <media/CharacterEncodingDetector.h>
 
 #include <stagefright/AVExtensions.h>
+#include <common/LogOverride.h>
 
 namespace android {
 
@@ -399,6 +400,7 @@ static VideoFrame *extractVideoFrame(
             || !strcasecmp(mime, MEDIA_MIMETYPE_VIDEO_HEVC);
 
     bool firstSample = true;
+    int32_t sampleCount = 0;
     int64_t targetTimeUs = -1ll;
 
     VideoFrame *frame = NULL;
@@ -438,6 +440,7 @@ static VideoFrame *extractVideoFrame(
                 ALOGV("Seeking closest: targetTimeUs=%lld", (long long)targetTimeUs);
             }
             firstSample = false;
+            sampleCount++;
 
             if (mediaBuffer->range_length() > codecBuffer->capacity()) {
                 ALOGE("buffer size (%zu) too large for codec input size (%zu)",
@@ -458,9 +461,10 @@ static VideoFrame *extractVideoFrame(
         }
 
         if (haveMoreInputs && inputIndex < inputBuffers.size()) {
-            if (isAvcOrHevc && IsIDR(codecBuffer) && decodeSingleFrame) {
+            if (isAvcOrHevc && IsIDR(codecBuffer) && decodeSingleFrame && sampleCount > 1) {
                 // Only need to decode one IDR frame, unless we're seeking with CLOSEST
                 // option, in which case we need to actually decode to targetTimeUs.
+                // To handle interlaced clip, we need to decode 2 samples for 2 fields.
                 haveMoreInputs = false;
                 flags |= MediaCodec::BUFFER_FLAG_EOS;
             }
@@ -506,10 +510,12 @@ static VideoFrame *extractVideoFrame(
                     ALOGV("Received an output buffer, timeUs=%lld", (long long)timeUs);
                     sp<MediaCodecBuffer> videoFrameBuffer = outputBuffers.itemAt(index);
 
-                    int32_t width, height;
+                    int32_t width, height, stride, slice_height;
                     CHECK(outputFormat != NULL);
                     CHECK(outputFormat->findInt32("width", &width));
                     CHECK(outputFormat->findInt32("height", &height));
+                    CHECK(outputFormat->findInt32("stride", &stride));
+                    CHECK(outputFormat->findInt32("slice-height", &slice_height));
 
                     int32_t crop_left, crop_top, crop_right, crop_bottom;
                     if (!outputFormat->findRect("crop", &crop_left, &crop_top, &crop_right, &crop_bottom)) {
@@ -548,7 +554,7 @@ static VideoFrame *extractVideoFrame(
                     if (converter.isValid()) {
                         err = converter.convert(
                                 (const uint8_t *)videoFrameBuffer->data(),
-                                width, height,
+                                stride, slice_height,
                                 crop_left, crop_top, crop_right, crop_bottom,
                                 frame->mData,
                                 frame->mWidth,

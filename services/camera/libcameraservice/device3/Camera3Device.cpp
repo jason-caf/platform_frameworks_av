@@ -509,9 +509,6 @@ ssize_t Camera3Device::getJpegBufferSize(uint32_t width, uint32_t height) const 
             (maxJpegResolution.width * maxJpegResolution.height);
     ssize_t jpegBufferSize = scaleFactor * (maxJpegBufferSize - kMinJpegBufferSize) +
             kMinJpegBufferSize;
-    if (jpegBufferSize > maxJpegBufferSize) {
-        jpegBufferSize = maxJpegBufferSize;
-    }
 
     return jpegBufferSize;
 }
@@ -1975,6 +1972,20 @@ status_t Camera3Device::setConsumerSurfaces(int streamId,
     }
 
     return OK;
+}
+
+status_t Camera3Device::dropStreamBuffers(bool dropping, int streamId) {
+    Mutex::Autolock il(mInterfaceLock);
+    Mutex::Autolock l(mLock);
+
+    int idx = mOutputStreams.indexOfKey(streamId);
+    if (idx == NAME_NOT_FOUND) {
+        ALOGE("%s: Stream %d is not found.", __FUNCTION__, streamId);
+        return BAD_VALUE;
+    }
+
+    sp<Camera3OutputStreamInterface> stream = mOutputStreams.editValueAt(idx);
+    return stream->dropBuffers(dropping);
 }
 
 /**
